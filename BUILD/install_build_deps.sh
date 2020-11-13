@@ -117,11 +117,6 @@ then
          sqlite sqlite-devel pkgconfig lua lua-devel rpm-build createrepo yum-utils \
          gnutls-devel libgcrypt-devel pam-devel libcurl-devel
 
-    # Install libasan for CentOS 8 as it uses the default system
-    # compiler. CentOS 7 will use the ASAN that's installed alongside the newer
-    # compiler.
-    sudo yum install -y libasan
-
     # Attempt to install systemd-devel, doesn't work on CentOS 6
     sudo yum install -y systemd-devel
 
@@ -132,12 +127,18 @@ then
     sudo yum -y install centos-release-scl || \
         sudo yum-config-manager --enable rhui-REGION-rhel-server-rhscl
 
-    sudo yum -y install devtoolset-7-gcc-c++
-    sudo yum -y install devtoolset-7-libasan-devel
-
-
-    # Enable it by default
-    echo "source /opt/rh/devtoolset-7/enable" >> ~/.bashrc
+    # Install newer compiler for CentOS 7 and 6
+    grep "release [67]" /etc/redhat-release
+    if [ $? -eq 0 ]
+    then
+        sudo yum -y install devtoolset-7-gcc-c++
+        sudo yum -y install devtoolset-7-libasan-devel
+        # Enable it by default
+        echo "source /opt/rh/devtoolset-7/enable" >> ~/.bashrc
+    else
+        # CentOS 8 only needs ASAN
+        sudo yum -y install libasan-devel
+    fi
 
     grep "release 6" /etc/redhat-release
     if [ $? -ne 0 ]
