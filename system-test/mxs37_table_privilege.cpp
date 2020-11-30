@@ -125,14 +125,14 @@ int test_logins(TestConnections& test)
 
     const char query_fmt[] = "SELECT %s from %s;";
     string query = mxb::string_printf(query_fmt, "*", table);
-    successes += (test_user(db_user, db_pass, query) == true);
-    test_user(table_user, table_pass, query);
+    successes += test_user(db_user, db_pass, query) == true;
+    successes += test_user(table_user, table_pass, query) == true;
 
     query = mxb::string_printf(query_fmt, "c2", table);
-    test_user(column_user, column_pass, query);
+    successes += test_user(column_user, column_pass, query) == true;
 
     query = mxb::string_printf("CALL %s();", proc);
-    test_user(process_user, process_pass, query);
+    successes += test_user(process_user, process_pass, query) == true;
 
     return successes;
 };
