@@ -27,7 +27,7 @@ const char process_user[] = "process_user";
 const char process_pass[] = "process_pass";
 }
 
-int test_logins(TestConnections& test);
+void test_logins(TestConnections& test, bool expect_success);
 
 int main(int argc, char* argv[])
 {
@@ -68,8 +68,7 @@ int main(int argc, char* argv[])
         if (test.ok())
         {
             // Check that logging in fails, as none of the users have privs.
-            int logins = test_logins(test);
-            test.expect(logins == 0, "Login succeeded when it should have failed.");
+            test_logins(test, false);
         }
 
         if (test.ok())
@@ -91,8 +90,7 @@ int main(int argc, char* argv[])
 
         if (test.ok())
         {
-            int logins = test_logins(test);
-            test.expect(logins == 4, "Login failed when it should have succeeded.");
+            test_logins(test, true);
         }
         conn->cmd_f("DROP DATABASE %s;", db);
     }
@@ -106,7 +104,7 @@ int main(int argc, char* argv[])
     return test.global_result;
 }
 
-int test_logins(TestConnections& test)
+void test_logins(TestConnections& test, bool expect_success)
 {
     int successes = 0;
     int port = test.maxscales->rwsplit_port[0];
@@ -127,16 +125,30 @@ int test_logins(TestConnections& test)
         return rval;
     };
 
+
     const char query_fmt[] = "SELECT %s from %s;";
     string query = mxb::string_printf(query_fmt, "*", table);
-    successes += test_user(db_user, db_pass, query) == true;
-    successes += test_user(table_user, table_pass, query) == true;
+
+    const char report_fmt[] = "";
+
+    auto report_error = [&test](const char* user, bool result, bool expected) {
+        const char* result_str = result ? "succeeded" : "failed";
+        const char* expected_str = expected ? "succes" : "failure";
+        test.expect(result == expected, "User %s login and query %s when %s was expected.",
+                    db_user, result_str, expected_str);
+    };
+
+    bool ret = test_user(db_user, db_pass, query);
+    report_error(db_user, ret, expect_success);
+
+    ret = test_user(table_user, table_pass, query);
+    report_error(table_user, ret, expect_success);
 
     query = mxb::string_printf(query_fmt, "c2", table);
-    successes += test_user(column_user, column_pass, query) == true;
+    ret = test_user(column_user, column_pass, query);
+    report_error(column_user, ret, expect_success);
 
     query = mxb::string_printf("CALL %s();", proc);
-    successes += test_user(process_user, process_pass, query) == true;
-
-    return successes;
+    ret = test_user(process_user, process_pass, query);
+    report_error(process_user, ret, expect_success);
 };
