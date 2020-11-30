@@ -4,91 +4,118 @@
  * - try to connecto to MAxscle with this user
  */
 
-
-#include <iostream>
-#include <unistd.h>
+#include <maxbase/format.hh>
+#include <maxtest/mariadb_connector.hh>
 #include <maxtest/testconnections.hh>
 #include <maxtest/sql_t1.hh>
 
-using namespace std;
+using std::string;
 
 int main(int argc, char* argv[])
 {
-    TestConnections* Test = new TestConnections(argc, argv);
-    Test->set_timeout(60);
+    TestConnections test(argc, argv);
+    test.set_timeout(60);
 
-    Test->maxscales->connect_maxscale(0);
+    test.maxscales->connect_maxscale(0);
 
-    Test->tprintf("Create user with only SELECT priviledge to a table");
+    auto& mxs = test.maxscale();
+    auto conn = mxs.open_rwsplit_connection();
 
-    execute_query_silent(Test->maxscales->conn_rwsplit[0], "DROP USER 'table_privilege'@'%'");
-    execute_query_silent(Test->maxscales->conn_rwsplit[0], "DROP TABLE test.t1");
-    execute_query(Test->maxscales->conn_rwsplit[0], "CREATE TABLE test.t1 (id INT)");
-    execute_query(Test->maxscales->conn_rwsplit[0],
-                  "CREATE USER 'table_privilege'@'%%' IDENTIFIED BY 'pass'");
-    execute_query(Test->maxscales->conn_rwsplit[0], "GRANT SELECT ON test.t1 TO 'table_privilege'@'%%'");
+    string db_user = "db_user";
+    string db_pass = "db_pass";
+    string table_user = "table_user";
+    string table_pass = "table_pass";
+    string column_user = "column_user";
+    string column_pass = "column_pass";
+    string process_user = "process_user";
+    string process_pass = "process_pass";
 
-    Test->stop_timeout();
-    if (Test->repl)
-    {
-        Test->repl->sync_slaves();
-    }
-    else
-    {
-        Test->galera->sync_slaves();
-    }
+    auto create_user = [&](const string& user, const string& pass) {
+        conn->cmd_f("DROP USER IF EXISTS '%s'@'%%'", user.c_str());
+        conn->cmd_f("CREATE USER '%s'@'%%' IDENTIFIED BY '%s';", user.c_str(), pass.c_str());
+    };
 
-    Test->tprintf("Trying to connect using this user\n");
-    Test->set_timeout(20);
+    create_user(db_user, db_pass);
+    create_user(table_user, table_pass);
+    create_user(column_user, column_pass);
+    create_user(process_user, process_pass);
 
-    bool error = true;
+    const char db[] = "priv_test";
+    const char table[] = "priv_test.t1";
+    const char proc[] = "priv_test.p1";
 
-    /**
-     * Since this test is executed on both Galera and Master-Slave clusters, we
-     * need to try to connect multiple times as Galera user creation doesn't
-     * seem to apply instantly on all nodes. For Master-Slave clusters, the
-     * first connection should be OK and if it's not, it's highly likely that
-     * others will also fail.
-     */
-    for (int i = 0; i < 5; i++)
-    {
-        MYSQL* conn = open_conn_db(Test->maxscales->rwsplit_port[0],
-                                   Test->maxscales->ip4(0),
-                                   (char*) "test",
-                                   (char*) "table_privilege",
-                                   (char*) "pass",
-                                   Test->ssl);
-        if (mysql_errno(conn) != 0)
-        {
-            Test->tprintf("Failed to connect: %s", mysql_error(conn));
-        }
-        else
-        {
-            Test->set_timeout(20);
-            Test->tprintf("Trying SELECT\n");
-            if (execute_query(conn, (char*) "SELECT * FROM t1") == 0)
-            {
-                mysql_close(conn);
-                error = false;
-                break;
-            }
-        }
+    auto test_logins = [&]() {
+        int successes = 0;
+        int port = test.maxscales->rwsplit_port[0];
+        auto ip = test.maxscales->ip4(0);
+
+        MYSQL* conn = open_conn_db(port, ip, db, db_user, db_pass);
+        successes += (mysql_errno(conn) == 0);
         mysql_close(conn);
-        sleep(1);
-    }
 
-    if (error)
+        conn = open_conn_db(port, ip, db, table_user, table_pass);
+        successes += (mysql_errno(conn) == 0);
+        mysql_close(conn);
+
+        conn = open_conn_db(port, ip, db, column_user, column_pass);
+        successes += (mysql_errno(conn) == 0);
+        mysql_close(conn);
+
+        conn = open_conn_db(port, ip, db, process_user, process_pass);
+        successes += (mysql_errno(conn) == 0);
+        mysql_close(conn);
+
+        return successes;
+    };
+
+    if (test.ok())
     {
-        Test->add_result(1, "Failed to connect.");
+        test.tprintf("Users created.");
+        // Create a database, a table, a column and a stored procedure.
+        conn->cmd_f("CREATE OR REPLACE DATABASE %s;", db);
+        conn->cmd_f("CREATE TABLE %s (c1 INT, c2 INT);", table);
+        conn->cmd_f("CREATE PROCEDURE %s () "
+                    "BEGIN "
+                    "SELECT rand(); "
+                    "END; ",
+                    proc);
+
+        if (test.ok())
+        {
+            // Check that logging in fails, as none of the users have privs.
+            int logins = test_logins();
+            test.expect(logins == 0, "Login succeeded when it should have failed.");
+        }
+
+        if (test.ok())
+        {
+            const char grant_fmt[] = "GRANT SELECT %s TO '%s'@'%%';";
+
+            string db_grant = mxb::string_printf("ON %s", db);
+            conn->cmd_f(grant_fmt, db_grant.c_str(), db_user.c_str());
+
+            string table_grant = mxb::string_printf("ON %s", table);
+            conn->cmd_f(grant_fmt, table_grant.c_str(), table_user.c_str());
+
+            string column_grant = mxb::string_printf("(c2) ON %s", table);
+            conn->cmd_f(grant_fmt, column_grant.c_str(), column_user.c_str());
+
+            conn->cmd_f("GRANT EXECUTE ON PROCEDURE %s TO '%s'@'%%';", proc, process_user.c_str());
+        }
+
+        if (test.ok())
+        {
+            int logins = test_logins();
+            test.expect(logins == 4, "Login failed when it should have succeeded.");
+        }
+        conn->cmd_f("DROP DATABASE %s;", db);
     }
 
-    Test->set_timeout(20);
-    execute_query_silent(Test->maxscales->conn_rwsplit[0], "DROP USER 'table_privilege'@'%'");
-    execute_query_silent(Test->maxscales->conn_rwsplit[0], "DROP TABLE test.t1");
+    const char drop_fmt[] = "DROP USER '%s'@'%%';";
+    conn->cmd_f(drop_fmt, db_user.c_str());
+    conn->cmd_f(drop_fmt, table_user.c_str());
+    conn->cmd_f(drop_fmt, column_user.c_str());
+    conn->cmd_f(drop_fmt, process_user.c_str());
 
-    Test->check_maxscale_alive(0);
-    int rval = Test->global_result;
-    delete Test;
-
-    return rval;
+    return test.global_result;
 }
