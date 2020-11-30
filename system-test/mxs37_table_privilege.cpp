@@ -16,7 +16,7 @@ int main(int argc, char* argv[])
     TestConnections test(argc, argv);
     test.set_timeout(60);
 
-    test.maxscales->connect_maxscale(0);
+    test.maxscales->ssl = false;
 
     auto& mxs = test.maxscale();
     auto conn = mxs.open_rwsplit_connection();
@@ -44,26 +44,36 @@ int main(int argc, char* argv[])
     const char table[] = "priv_test.t1";
     const char proc[] = "priv_test.p1";
 
-    auto test_logins = [&]() {
+    auto test_logins = [&](TestConnections& test) {
         int successes = 0;
         int port = test.maxscales->rwsplit_port[0];
         auto ip = test.maxscales->ip4(0);
 
-        MYSQL* conn = open_conn_db(port, ip, db, db_user, db_pass);
-        successes += (mysql_errno(conn) == 0);
-        mysql_close(conn);
+        auto test_user = [&](const string& user, const string& pass, const string& query) {
+            bool rval = false;
+            MYSQL* conn = open_conn_db(port, ip, db, user, pass);
+            if (mysql_errno(conn) == 0)
+            {
+                // Query should work.
+                if (test.try_query(conn, "%s", query.c_str()))
+                {
+                    rval = true;
+                }
+            }
+            mysql_close(conn);
+            return rval;
+        };
 
-        conn = open_conn_db(port, ip, db, table_user, table_pass);
-        successes += (mysql_errno(conn) == 0);
-        mysql_close(conn);
+        const char query_fmt[] = "SELECT %s from %s;";
+        string query = mxb::string_printf(query_fmt, "*", table);
+        successes += (test_user(db_user, db_pass, query) == true);
+        test_user(table_user, table_pass, query);
 
-        conn = open_conn_db(port, ip, db, column_user, column_pass);
-        successes += (mysql_errno(conn) == 0);
-        mysql_close(conn);
+        query = mxb::string_printf(query_fmt, "c2", table);
+        test_user(column_user, column_pass, query);
 
-        conn = open_conn_db(port, ip, db, process_user, process_pass);
-        successes += (mysql_errno(conn) == 0);
-        mysql_close(conn);
+        query = mxb::string_printf("CALL %s();", proc);
+        test_user(process_user, process_pass, query);
 
         return successes;
     };
@@ -74,6 +84,7 @@ int main(int argc, char* argv[])
         // Create a database, a table, a column and a stored procedure.
         conn->cmd_f("CREATE OR REPLACE DATABASE %s;", db);
         conn->cmd_f("CREATE TABLE %s (c1 INT, c2 INT);", table);
+        conn->cmd_f("INSERT INTO %s VALUES (1, 2);", table);
         conn->cmd_f("CREATE PROCEDURE %s () "
                     "BEGIN "
                     "SELECT rand(); "
@@ -91,7 +102,7 @@ int main(int argc, char* argv[])
         {
             const char grant_fmt[] = "GRANT SELECT %s TO '%s'@'%%';";
 
-            string db_grant = mxb::string_printf("ON %s", db);
+            string db_grant = mxb::string_printf("ON %s.*", db);
             conn->cmd_f(grant_fmt, db_grant.c_str(), db_user.c_str());
 
             string table_grant = mxb::string_printf("ON %s", table);
