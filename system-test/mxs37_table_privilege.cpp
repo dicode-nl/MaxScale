@@ -35,6 +35,7 @@ int main(int argc, char* argv[])
     test.set_timeout(60);
 
     test.maxscales->ssl = false;
+    test.repl->connect();
 
     auto& mxs = test.maxscale();
     auto conn = mxs.open_rwsplit_connection();
@@ -48,6 +49,7 @@ int main(int argc, char* argv[])
     create_user(table_user, table_pass);
     create_user(column_user, column_pass);
     create_user(process_user, process_pass);
+    test.repl->sync_slaves();
 
     if (test.ok())
     {
@@ -61,6 +63,7 @@ int main(int argc, char* argv[])
                     "SELECT rand(); "
                     "END; ",
                     proc);
+        test.repl->sync_slaves();
 
         if (test.ok())
         {
@@ -83,6 +86,7 @@ int main(int argc, char* argv[])
             conn->cmd_f(grant_fmt, column_grant.c_str(), column_user);
 
             conn->cmd_f("GRANT EXECUTE ON PROCEDURE %s TO '%s'@'%%';", proc, process_user);
+            test.repl->sync_slaves();
         }
 
         if (test.ok())
