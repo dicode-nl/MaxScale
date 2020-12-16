@@ -69,10 +69,10 @@ then
        -o Dpkg::Options::=--force-confdef \
        -y --force-yes"
   ${apt_cmd} install dpkg-dev git wget \
-       build-essential libssl-dev ncurses-dev bison flex \
+       build-essential libssl-dev bison flex \
        perl libtool tcl tcl-dev uuid \
        uuid-dev libsqlite3-dev liblzma-dev libpam0g-dev pkg-config \
-       libedit-dev libcurl4-openssl-dev libatomic1 \
+       libcurl4-openssl-dev libatomic1 \
        libsasl2-dev libxml2-dev libkrb5-dev
 
   # One of these will work, older systems use libsystemd-daemon-dev
@@ -110,29 +110,26 @@ then
     then
         enable_power_tools="--enablerepo=PowerTools"
     fi
+
     sudo yum install -y --nogpgcheck ${enable_power_tools} \
-         gcc gcc-c++ ncurses-devel bison glibc-devel \
-         libgcc perl make libtool openssl-devel libaio libaio-devel libedit-devel \
-         libedit-devel systemtap-sdt-devel rpm-sign wget \
-         gnupg flex rpmdevtools git wget tcl tcl-devel openssl libuuid-devel xz-devel \
-         sqlite sqlite-devel pkgconfig lua lua-devel rpm-build createrepo yum-utils \
-         gnutls-devel libgcrypt-devel pam-devel libcurl-devel libatomic \
-         cyrus-sasl-devel libxml2-devel krb5-devel
+         gcc gcc-c++ glibc-devel libgcc openssl libuuid-devel make libtool \
+         openssl-devel gnutls-devel libgcrypt-devel tcl-devel xz-devel sqlite \
+         sqlite-devel pam-devel libcurl-devel libatomic cyrus-sasl-devel \
+         libxml2-devel krb5-devel systemd-devel \
+         pkgconfig wget flex bison git tcl perl gnupg \
+         rpmdevtools rpm-sign rpm-build createrepo yum-utils \
 
-    # Attempt to install systemd-devel, doesn't work on CentOS 6
-    sudo yum install -y systemd-devel
-
-    # Enable the devtoolkit to get a newer compiler
-
-    # CentOS: install the centos-release-scl repo
-    # RHEL: enable the existing repo (seems to be rhui-REGION-rhel-server-rhscl on AWS)
-    sudo yum -y install centos-release-scl || \
-        sudo yum-config-manager --enable rhui-REGION-rhel-server-rhscl
-
-    # Install newer compiler for CentOS 7 and 6
-    grep "release [67]" /etc/redhat-release
+    # Install newer compiler for CentOS 7
+    grep "release [7]" /etc/redhat-release
     if [ $? -eq 0 ]
     then
+        # Enable the devtoolkit to get a newer compiler
+
+        # CentOS: install the centos-release-scl repo
+        # RHEL: enable the existing repo (seems to be rhui-REGION-rhel-server-rhscl on AWS)
+        sudo yum -y install centos-release-scl || \
+            sudo yum-config-manager --enable rhui-REGION-rhel-server-rhscl
+
         sudo yum -y install devtoolset-7-gcc-c++
         sudo yum -y install devtoolset-7-libasan-devel
         # Enable it by default
@@ -142,13 +139,10 @@ then
         sudo yum -y install libasan-devel
     fi
 
-    grep "release [78]" /etc/redhat-release
-    if [ $? -eq 0 ]
-    then
-        # EPEL is installed for GCOV report generation (lcov)
-        sudo yum -y install epel-release
-        sudo yum -y install lcov
-    fi
+    # EPEL is installed for GCOV report generation (lcov)
+    sudo yum -y install epel-release
+    sudo yum -y install lcov
+    sudo yum -y install lua lua-devel
 fi
 
 if [[ ${packager_type} == "zypper" ]]
@@ -158,8 +152,8 @@ then
     sudo zypper -n refresh
     sudo zypper -n update
     sudo zypper -n remove gettext-runtime-mini
-    sudo zypper -n install gcc gcc-c++ ncurses-devel bison glibc-devel libgcc_s1 perl \
-         make libtool libopenssl-devel libaio libaio-devel flex \
+    sudo zypper -n install gcc gcc-c++ bison glibc-devel libgcc_s1 perl \
+         make libtool libopenssl-devel flex \
          git wget tcl tcl-devel libuuid-devel \
          xz-devel sqlite3 sqlite3-devel pkg-config lua lua-devel \
          gnutls-devel libgcrypt-devel pam-devel systemd-devel libcurl-devel libatomic1 \
