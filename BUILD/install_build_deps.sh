@@ -104,14 +104,8 @@ then
     # YUM!
     sudo yum clean all
     sudo yum update -y
-    unset enable_power_tools
-    yum repolist all | grep PowerTools
-    if [ $? == 0 ]
-    then
-        enable_power_tools="--enablerepo=PowerTools"
-    fi
 
-    sudo yum install -y --nogpgcheck ${enable_power_tools} \
+    sudo yum install -y --nogpgcheck \
          gcc gcc-c++ glibc-devel libgcc openssl libuuid-devel make libtool \
          openssl-devel gnutls-devel libgcrypt-devel tcl-devel xz-devel sqlite \
          sqlite-devel pam-devel libcurl-devel libatomic cyrus-sasl-devel \
@@ -142,7 +136,15 @@ then
     # EPEL is installed for GCOV report generation (lcov)
     sudo yum -y install epel-release
     sudo yum -y install lcov
-    sudo yum -y install lua lua-devel
+
+    unset enable_power_tools
+    yum repolist all | grep PowerTools
+    if [ $? == 0 ]
+    then
+        enable_power_tools="--enablerepo=PowerTools"
+    fi
+
+    sudo yum -y install ${enable_power_tools} lua lua-devel
 fi
 
 if [[ ${packager_type} == "zypper" ]]
