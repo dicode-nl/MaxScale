@@ -141,7 +141,7 @@ then
     yum repolist all | grep PowerTools
     if [ $? == 0 ]
     then
-        enable_power_tools="--enablerepo=PowerTools"
+        enable_power_tools="--enablerepo=$(yum repolist all | grep PowerTools | cut -f 1 -d ' ')"
     fi
 
     sudo yum -y install ${enable_power_tools} lua lua-devel
